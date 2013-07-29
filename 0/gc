@@ -1,0 +1,34 @@
+local sideDetect = false
+
+--peripheral scanner
+function checkPeripheral()
+	for i,side in pairs(rs.getSides()) do
+		if peripheral.getType(side) =="monitor" then
+			m=peripheral.wrap(side)
+			sideDetect = true
+			print("Monitor found on side "..side)
+			break
+		end
+	end
+	if sideDetect == false then
+			print("No Monitor Detected.. waiting for 5 seconds")
+			return false
+	end
+end
+
+--Makes the screen and monitor ready for use. 
+function housekeeping()
+	repeat
+		checkPeripheral()
+		if not sideDetect then sleep(5) end
+	until sideDetect
+end
+
+housekeeping()
+
+while true do
+	event,side,x,y = os.pullEvent("monitor_touch")
+	m.setCursorPos(x,y)
+	m.write("@")
+	print(x..","..y)
+end
