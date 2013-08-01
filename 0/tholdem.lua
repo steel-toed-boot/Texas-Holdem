@@ -25,6 +25,7 @@ local playerFold = false
 local potMoney = 0
 local playerBets = {}
 local AIFold = {}
+local allAIFold = false
 local needRaise = false
 local inputP = ""
 
@@ -323,10 +324,6 @@ function foldFunction()
 	playerFold = true
 end
 
-function raiseFunction()
-	raiseController()
-end
-
 function setup_playerMoney()
 	for player=1,num_AI+1 do
 		if player==1 then
@@ -337,8 +334,12 @@ function setup_playerMoney()
 	end
 end
 
-function playerMoneyController()
-	
+function refreshWindowState()
+	screenDesigner.setWindowState(3,true)
+	displayBets()
+	screenDesigner.writeText(monX-maxCharLen,3,potMoney)
+	screenDesigner.writeText(monX-maxCharLen,2,userMoney[1])
+	tableCardsController()
 end
 
 function decypherCard(cardString)
@@ -386,18 +387,15 @@ function screen_play()
 	--important buttons raiseFunction
 	screenDesigner.newButton(1,nil,"Bet",17,16,25,18,true,nil,colors.lime,colors.red)
 	screenDesigner.newButtonFunction(1,betFunction)
-	screenDesigner.newButton(2,nil,"Raise",17,19,25,21,true,nil,colors.green,colors.red)
-	screenDesigner.newButtonFunction(2,raiseFunction)
-	screenDesigner.newButton(3,nil,"Fold",17,22,25,24,false,colors.yellow,colors.gray,colors.red)
-	screenDesigner.newButtonFunction(3,foldFunction)
-	for button=1,3 do
-		screenDesigner.makeFlashButton(button)
-	end
+	screenDesigner.makeFlashButton(1)
+	screenDesigner.newButton(2,nil,"Fold",17,19,25,21,false,colors.yellow,colors.gray,colors.red)
+	screenDesigner.newButtonFunction(2,foldFunction)
+	screenDesigner.makeFlashButton(2)
 	
 	--/help button
-	screenDesigner.newButton(4,false,"?",1,monY,1,monY,false,colors.black,colors.white,colors.black)
-	screenDesigner.makeFlashButton(4)
-	screenDesigner.newButtonFunction(4,helpFunc)
+	screenDesigner.newButton(3,false,"?",1,monY,1,monY,false,colors.black,colors.white,colors.black)
+	screenDesigner.makeFlashButton(3)
+	screenDesigner.newButtonFunction(3,helpFunc)
 	
 end
 
@@ -408,8 +406,8 @@ function displayBets()
 			playerText = "You:"
 			playerN=""
 		else
-			playerText = "AI:"
-			playerN = tostring(player-1)
+			playerText = "AI"
+			playerN = tostring(tostring(player-1)..":")
 		end
 		screenDesigner.writeText(28,14+2*player,playerText..playerN.." $"..playerBets[player],colors.black,colors.red)
 	end
@@ -420,10 +418,12 @@ function betController()
 	local playerBet = playerBets[1]
 	userMoney[1]=userMoney[1]-playerBet
 	
+	screenDesigner.buttonsEditor(1, "invisibleButton", true)
+	refreshWindowState()
 	for ai=1,num_AI do
 		local A = math.random(1,15)
 		local B = math.random(1,15)
-		if A>9 then
+		if A>=9 then
 			param1=playerBet
 		else
 			param1=playerBet+math.random(1,10)
@@ -431,33 +431,33 @@ function betController()
 		if B<=8 then
 			aBet=param1
 		elseif B>8 and B<=13 then
-			param2=math.random(playerBet,userMoney[ai])
+			param2=math.random(param1,userMoney[ai])
 			aBet = math.random(param1,param2)
 		elseif B>13 then
 			AIFold[ai]=1
+			aBet=0
 		end
-		
-		playerBets[ai]=aBet
+		playerBets[ai+1]=aBet
 		potMoney = potMoney+aBet
-		--sleep(math.random(1,5))
+		notifier()
+		print("AI #"..ai.." is thinking...")
+		sleep(math.random(1,5))
+		refreshWindowState()
 	end
 	potMoney = potMoney+playerBet
 end
 
 function raiseController()
-	for player=2,num_AI+1 do
+	for player=2,num_AI+1,2 do
+		--makes all AI bets even
 		if playerBets[player]~=playerBets[player+1] and playerBets[player+1]~=nil then
-			local A = math.random(1,50)
-			if A>=25 then
-				playerBets[player+1]=playerBets[player]
-			else
-				playerBets[player]=playerBets[player+1]
-			end
+			playerBets[player+1]=playerBets[player]
 		end
 	end
 	if playerBets[1]<playerBets[2] then
 		inputRaise(playerBets[2]-playerBets[1])
 	end
+	screenDesigner.buttonsEditor(1, "invisibleButton", false)
 end
 
 function input()
@@ -466,31 +466,30 @@ end
 
 function inputRaise(raise)
 	local playerRaise
+	local updateId
 	notifier()
 	print("Please input raise of $"..raise.." or Fold.")
 	repeat
 		parallel.waitForAny(input,screenDesigner.testTouch)
-		local updateId = screenDesigner.getUpdateId
-		playerRaise=inputP
-	until playerRaise==tostring(raise) or updateId==3
+		updateId= screenDesigner.getUpdateId()
+		playerRaise=tonumber(inputP) or 0
+	until playerRaise==tostring(raise) or updateId==2
 	potMoney = potMoney+playerRaise
 end
 
 function gameController()
 	--go through each player and place bet
 	betPlaced=false
+	AIFoldCheck()
 	screenDesigner.buttonsEditor(1, "invisibleButton", false)
-	screenDesigner.buttonsEditor(2, "invisibleButton", true)
-	while true and not playerFold do
+	while true and not playerFold and not allAIFold do
 		screenDesigner.testTouch()
 		local updateId = screenDesigner.getUpdateId()
-		if playerFold then
+		if playerFold or allAIFold then
 			break
 		end
-		if updateId~=4 then
+		if updateId~=3 then
 			betController()
-			screenDesigner.buttonsEditor(1, "invisibleButton", true)
-			screenDesigner.buttonsEditor(2, "invisibleButton", false)
 			raiseController()
 			break
 		end
@@ -691,39 +690,70 @@ function prePlay()
 	screenDesigner.newText(monX-maxCharLen,3,"0")
 end
 
+function AIFoldCheck()
+	if math.min(unpack(AIFold))==1 then
+		allAIFold =  true
+	else
+		allAIFold = false
+	end
+end
+
 function play_firstRound()
 	firstBet = false
-	screenDesigner.setWindowState(3,true)
-	tableCardsController()
+	refreshWindowState()
+	notifier()
+	print("Please input first bet or Fold.")
 	gameController()
 	firstBet = true
-	screenDesigner.setWindowState(3,true)
-	tableCardsController()
+	refreshWindowState()
 end
 
 function play_normalRound()
 	for round=1,2 do
 		gameController()
-		screenDesigner.setWindowState(3,true)
-		displayBets()
-		screenDesigner.writeText(monX-maxCharLen,3,potMoney)
-		screenDesigner.writeText(monX-maxCharLen,2,userMoney[1])
 		tableCardAmount=tableCardAmount+1
-		tableCardsController()
+		refreshWindowState()
 	end
 end
 
 function play()
 	play_firstRound()
-	screenDesigner.writeText(monX-maxCharLen,3,potMoney)
-	screenDesigner.writeText(monX-maxCharLen,2,userMoney[1])
-	displayBets()
+	refreshWindowState()
 	play_normalRound()
 	determineVictor()
 end
 
 function determineVictor()
-	helpFunc()
+	local playerSets = {}
+	local playerHighRank = {}
+	local winner = 0
+	for player=1,num_Ai+1 do
+		cardSetRanker(player)
+		playerSets[player]=copyTable(rankResults)
+	end
+	for player=1,num_AI+1 do
+		for rank=2,8 do
+			if playerSets[player][rank]==true and playerSets[player][rank+1]==false and playerSets[player][9]==false then
+				playerHighRank[player]=rank
+			elseif playerSets[player][9]==true then
+				playerHighRank[player]=9
+			else
+				playerHighRank[player]=playerSets[player][1]*.01
+			end
+		end
+	end
+	
+	notifier()
+	winner=math.max(unpack(playerHighRank))
+	for player=1,num_AI+1 do
+		if playerHighRank[player]==winner then
+			if player==1 then
+				print("You Won!")
+			else
+				print("AI #"..player-1.. " won!")
+			end
+		end
+	end
 end
 
 game()
