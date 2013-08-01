@@ -46,6 +46,19 @@ function notifier()
 	screenDesigner.writeText(1,monY,"Please look at computer.",colors.white,colors.cyan)
 end
 
+function debugRank(player)
+	cardSetRanker(player)
+	print(rankResults[1].." High Card.")
+	print(rankResults[2].." Pair(s).")
+	print(tostring(rankResults[3]).."  3-of-a-kind.")
+	print(tostring(rankResults[4]).." Straight.")
+	print(tostring(rankResults[5]).." Flush.")
+	print(tostring(rankResults[6]).." Full House.")
+	print(tostring(rankResults[7]).." 4-of-a-Kind.")
+	print(tostring(rankResults[8]).." Straight Flush.")
+	print(tostring(rankResults[9]).." Royal Flush.")
+end
+
 function helpFunc()
 	notifier()
 	if firstBet then
@@ -177,7 +190,7 @@ function check_straight()
 		tempCardSet[cardPairs[n]]=0
 		n=n-1
 	end
-	local maxCard = tempCardSet[p]
+	local maxCard = math.max(unpack(tempCardSet))
 	local multiplied = 0
 	while maxCard >=5 do
 		multiplied = maxCard*tempCardSet[p-1]*tempCardSet[p-2]*tempCardSet[p-3]*tempCardSet[p-4]
@@ -265,15 +278,12 @@ end
 
 function check_highCard()
 	--check for high card
-	local highCard 
+	local highCard=0
+	
 	if math.min(cardSet[1],cardSet[2])==1 then
 		highCard="Ace"
 	else
-		highCard = math.max(cardSet[1],cardSet[2])
-		
-		if highCard>10 then
-		highCard = specialCards[14-highCard]
-		end
+		highCard = getCardReversedValue(math.max(cardSet[1],cardSet[2]))
 	end
 	return highCard
 end
@@ -286,19 +296,8 @@ function cardSetRanker(player)
 	end
 	
 	for card=1,#cardSet do
-		if cardSet[card] == "King" then
-			cardSet[card]=13
-		elseif  cardSet[card] =="Queen" then
-			cardSet[card]=12
-		elseif cardSet[card] == "Jack" then
-			cardSet[card]=11
-		end
-		cardSet[card]=tonumber(cardSet[card])
+		cardSet[card]=getCardReversedValue(cardSet[card])
 	end
-	
-	--testing stuff
-	--cardSet={1,2,3,9,4,5}
-	--cardSuitSet = {1,1,3,4,1,1,1}
 	
 	rankResults[1] = check_highCard()
 	numPairs,cardPairs= check_pairs()
@@ -345,6 +344,28 @@ end
 function decypherCard(cardString)
 	for suit,card in string.gmatch(cardString,"(.+):(.+)") do
 		return tonumber(suit),card
+	end
+end
+
+function getCardReversedValue(card)
+	if type(card)=="string" then
+		if card == "King" then
+			return 13
+		elseif card =="Queen" then
+			return 12
+		elseif card == "Jack" then
+			return 11
+		elseif card == "Ace" then
+			return 1
+		else
+			return tonumber(card)
+		end
+	elseif card>10 then
+		return specialCards[14-card]
+	elseif card==1 then
+		return "Ace"
+	else
+		return card
 	end
 end
 
@@ -406,7 +427,7 @@ function displayBets()
 			playerText = "You:"
 			playerN=""
 		else
-			playerText = "AI"
+			playerText = "AI #"
 			playerN = tostring(tostring(player-1)..":")
 		end
 		screenDesigner.writeText(28,14+2*player,playerText..playerN.." $"..playerBets[player],colors.black,colors.red)
@@ -450,7 +471,7 @@ end
 function raiseController()
 	for player=2,num_AI+1,2 do
 		--makes all AI bets even
-		if playerBets[player]~=playerBets[player+1] and playerBets[player+1]~=nil then
+		if playerBets[player]~=playerBets[player+1] and playerBets[player+1]~=nil and AIFold[player-1]==0 then
 			playerBets[player+1]=playerBets[player]
 		end
 	end
@@ -472,8 +493,8 @@ function inputRaise(raise)
 	repeat
 		parallel.waitForAny(input,screenDesigner.testTouch)
 		updateId= screenDesigner.getUpdateId()
-		playerRaise=tonumber(inputP) or 0
-	until playerRaise==tostring(raise) or updateId==2
+		playerRaise=tonumber(inputP)
+	until playerRaise>=raise or updateId==2
 	potMoney = potMoney+playerRaise
 end
 
@@ -505,7 +526,6 @@ function window_setup_tableCards()
 		local card_suit,card_num = decypherCard(tableCards[card+1])
 		screenDesigner.newText(2+card*7,6,suits[card_suit],colors.white,suitColor[card_suit])
 		screenDesigner.newText(5+card*7,12,suits[card_suit],colors.white,suitColor[card_suit])
-		if card_num=="1" then card_num="Ace" end
 		screenDesigner.newText(2+card*5+add+ math.floor((5 - string.len(card_num)) /2) +1,9,card_num,colors.white,suitColor[card_suit])
 	end
 end
@@ -519,7 +539,6 @@ function window_setup_playerCards()
 		local card_suit,card_num = decypherCard(playerCards[1][card+1])
 		screenDesigner.newText(2+card*7,17,suits[card_suit],colors.white,suitColor[card_suit])
 		screenDesigner.newText(5+card*7,23,suits[card_suit],colors.white,suitColor[card_suit])
-		if card_num=="1" then card_num="Ace" end
 		screenDesigner.newText(2+card*5+add+ math.floor((5 - string.len(card_num)) /2) +1,20,card_num,colors.white,suitColor[card_suit])
 	end
 end
@@ -649,12 +668,7 @@ function shuffleDeck()
 		cardDeck[suit]={}
 		--makes cards
 		for card=1,13 do
-			if card>10 then
-				value = specialCards[14-card]
-			else
-				value = card
-			end
-			cardDeck[suit][card]=value
+			cardDeck[suit][card]=getCardReversedValue(card)
 		end
 		
 		for flips=1,100 do
@@ -701,14 +715,12 @@ end
 function play_firstRound()
 	firstBet = false
 	refreshWindowState()
-	notifier()
-	print("Please input first bet or Fold.")
 	gameController()
 	firstBet = true
 	refreshWindowState()
 end
 
-function play_normalRound()
+function play_normalRounds()
 	for round=1,2 do
 		gameController()
 		tableCardAmount=tableCardAmount+1
@@ -719,7 +731,7 @@ end
 function play()
 	play_firstRound()
 	refreshWindowState()
-	play_normalRound()
+	play_normalRounds()
 	determineVictor()
 end
 
@@ -727,7 +739,7 @@ function determineVictor()
 	local playerSets = {}
 	local playerHighRank = {}
 	local winner = 0
-	for player=1,num_Ai+1 do
+	for player=1,num_AI+1 do
 		cardSetRanker(player)
 		playerSets[player]=copyTable(rankResults)
 	end
@@ -738,19 +750,38 @@ function determineVictor()
 			elseif playerSets[player][9]==true then
 				playerHighRank[player]=9
 			else
-				playerHighRank[player]=playerSets[player][1]*.01
+				playerHighRank[player]=getCardReversedValue(playerSets[player][1])*.01
 			end
+		end
+		
+		if player==1 and playerFold then
+			playerHighRank[player]=-1
+		elseif AIFold[player+1] ==1 then
+			playerHighRank[player+1]=-1
 		end
 	end
 	
-	notifier()
 	winner=math.max(unpack(playerHighRank))
+	notifier()
+	screenDesigner.writeText(17,22,"Game Complete!",nil,colors.yellow)
+	sleep(6)
 	for player=1,num_AI+1 do
-		if playerHighRank[player]==winner then
+		if player==1 then
+			print("Player:")
+		else
+			print("AI #"..tostring(player-1)..":")
+		end
+		debugRank(player)
+		sleep(8)
+		notifier()
+	end
+	
+	for player=1,num_AI+1 do
+		if playerHighRank[player]==winner and winner~=0 then
 			if player==1 then
 				print("You Won!")
-			else
-				print("AI #"..player-1.. " won!")
+			elseif player>1 and winner~=0 then
+				print("AI #"..tostring(player-1).. " won!")	
 			end
 		end
 	end
